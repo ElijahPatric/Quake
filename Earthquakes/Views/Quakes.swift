@@ -8,10 +8,11 @@ The views of the app, which display details of the fetched earthquake data.
 import SwiftUI
 
 struct Quakes: View {
+    @EnvironmentObject var provider: QuakesProvider
+
     @AppStorage("lastUpdated")
     var lastUpdated = Date.distantFuture.timeIntervalSince1970
 
-    @EnvironmentObject var provider: QuakesProvider
     @State var editMode: EditMode = .inactive
     @State var selectMode: SelectMode = .inactive
     @State var isLoading = false
@@ -23,7 +24,9 @@ struct Quakes: View {
         NavigationView {
             List(selection: $selection) {
                 ForEach(provider.quakes) { quake in
-                    QuakeRow(quake: quake)
+                    NavigationLink(destination: QuakeDetail(quake: quake)) {
+                        QuakeRow(quake: quake)
+                    }
                 }
                 .onDelete(perform: deleteQuakes)
             }
@@ -32,12 +35,16 @@ struct Quakes: View {
             .toolbar(content: toolbarContent)
             .environment(\.editMode, $editMode)
             .refreshable {
-                await fetchQuakes()
+                do {
+                    try await provider.fetchQuakes()
+                } catch {
+                    self.error = QuakeError.missingData
+                    hasError = true
+                }
             }
-            .alert(isPresented: $hasError, error: error) {}
         }
         .task {
-            await fetchQuakes()
+            try? await provider.fetchQuakes()
         }
     }
 }
@@ -50,9 +57,8 @@ extension Quakes {
             return "\(selection.count) Selected"
         }
     }
-
     func deleteQuakes(at offsets: IndexSet) {
-        provider.quakes.remove(atOffsets: offsets)
+        provider.deleteQuakes(atOffsets: offsets)
     }
     func deleteQuakes(for codes: Set<String>) {
         var offsetsToDelete: IndexSet = []
@@ -80,8 +86,6 @@ extension Quakes {
 struct Quakes_Previews: PreviewProvider {
     static var previews: some View {
         Quakes()
-            .environmentObject(
-                QuakesProvider(client:
-                                QuakeClient(downloader: TestDownloader())))
+            .environmentObject(QuakesProvider(client: QuakeClient(downloader: TestDownloader())))
     }
 }
